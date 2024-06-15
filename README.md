@@ -40,4 +40,4 @@ x <stdin>
 x 366       2952280      35987638      20826880      20898454       4888746
 ```
 
-So each the daily logs for each host take about 20.8 on disk.
+So each the daily logs for each host take about 20.8 MB on disk.
