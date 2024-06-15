@@ -1,0 +1,76 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'opensearch/cli'
+require 'uri'
+require 'faraday/net_http_persistent'
+
+options = {
+  logs: 'logs-',
+  metrics: '\.samplerr-'
+}
+
+cli = OpenSearch::CLI.new do |opts|
+  opts.banner = "usage: #{$PROGRAM_NAME} [options]"
+
+  opts.separator('')
+  opts.separator('Data indices prefix:')
+  opts.on('--logs=PATTERN', 'The prefix of the logs indices') do |name|
+    options[:logs] = name
+  end
+
+  opts.on('--metrics=PATTERN', 'The prefix of the metrics indices') do |name|
+    options[:metrics] = name
+  end
+end
+
+cli.load
+cli.parse!
+
+stats = {
+  logs: [],
+  metrics: {
+    daily: [],
+    monthly: [],
+    yearly: []
+  }
+}
+
+def documents_per_host(client, index)
+  $stderr.write('.')
+  $stderr.flush
+
+  res = client.search(
+    index: index['index'],
+    body: {
+      aggs: {
+        number_of_hosts: {
+          cardinality: {
+            field: 'host.keyword'
+          }
+        }
+      },
+      size: 0
+    }
+  )
+
+  index['store.size'].to_i / res['aggregations']['number_of_hosts']['value']
+end
+
+indices = cli.client.cat.indices(format: 'json', bytes: 'b')
+indices.each do |index|
+  case index['index']
+  when /\A#{options[:logs]}/
+    stats[:logs] << documents_per_host(cli.client, index)
+  when /\A#{options[:metrics]}\d+\.\d+\.\d+\z/
+    stats[:metrics][:daily] << documents_per_host(cli.client, index)
+  when /\A#{options[:metrics]}\d+\.\d+\z/
+    stats[:metrics][:monthly] << documents_per_host(cli.client, index)
+  when /\A#{options[:metrics]}\d+\z/
+    stats[:metrics][:yearly] << documents_per_host(cli.client, index)
+  end
+end
+
+$stderr.puts
+
+puts stats.to_json
